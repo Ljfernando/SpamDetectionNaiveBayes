@@ -1,0 +1,501 @@
+---
+title: 'Case Study: Spam Detection With Naive Bayes'
+author: "Lance Fernando, Rachel Kim, Claire Pang, Ien Whang"
+date: "2/28/2018"
+output: 
+  html_document:
+    toc: true # table of content true
+    number_sections: true  ## if you want number sections at each table header
+    theme: spacelab  # many options for theme, this one is my favorite.
+---
+# Introduction
+Filtering spam emails is an application of Data Science that is implemented in our daily lives. In this project we hope to build a [naive bayes classifier](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) using the [CSDMC2010 SPAM corpus](https://github.com/jdwilson4/Intro-to-Machine-Learning/tree/master/Data/SPAMData). The dataset contains **4327** emails along with their response label indicating whether the email is spam or ham. There are a total of **1378 Ham** and **2949 Spam** email in this dataset. Using our naive bayes classifier, we hope to classify a given email as **spam** or **ham** depending on its content.
+```{r loadData, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(ggplot2)
+
+training.directory <- "~/Desktop/USFSpring2018/Statistical_Learning/Intro-to-Machine-Learning/Data/SPAMData/TRAINING/"
+
+# Loading training and test files from the SPAM data set
+training.names <- list.files(training.directory)
+
+#Load each email using the above file.names
+training.emails <- list()
+setwd(training.directory)
+
+for(i in 1:length(training.names)){
+  training.emails[[i]] <- readLines(training.names[i])
+}
+
+#Training labels
+labels <- read.table("~/Desktop/USFSpring2018/Statistical_Learning/Intro-to-Machine-Learning/Data/SPAMData/SPAMTrain.label")
+```
+
+# Programming algorithm
+```{r}
+# Computes the naive bayes classifier given all necessary probability calculations (i.e.,priors and class-conditional)
+# Posterior probabilities will be normalized such that their individual probabilities sum to 1.
+#
+# args:
+#   ccp - list of matrices with class-conditional probabilities. Each matrix corresponds to each level of y
+#   pp - vector of prior probabilities of response y
+#   obs - row observation vector from an X matrix with binary values 
+#
+# returns:
+#   Vector containing respective posterior probabilities for each level of y
+# Note: Row response should be classified as entry with the highest posterior probability 
+compute_classifier <- function(ccp, pp, obs){
+  llh0 <- numeric(0)
+  llh1 <- numeric(0)
+  
+  if(typeof(ccp) == "list"){ # If there are multiple features in X matrix
+    for(i in seq_along(ccp)){
+      curr_tbl <- ccp[[i]]
+      llh0 <- c(llh0, curr_tbl[1, obs[i] + 1])
+      llh1 <- c(llh1, curr_tbl[2, obs[i] + 1])
+    }
+  }else{
+    llh0 <- ccp[1,obs[i] + 1]
+    llh1 <- ccp[2,obs[i] + 1]
+  }
+  
+  llh0 <- prod(llh0)
+  llh1 <- prod(llh1)
+  num0 <- llh0 * pp[1]
+  num1 <- llh1 * pp[2]
+  evidence0 <- pp[1]*llh0 + pp[1]*llh1
+  evidence1 <- pp[2]*llh0 + pp[2]*llh1
+  
+  # Normalizing posterior probabilities
+  post0 <- num0/evidence0 / sum(c(num0/evidence0, num1/evidence1))
+  post1 <- num1/evidence1 / sum(c(num0/evidence0, num1/evidence1))
+  return(c(post0, post1))
+}
+
+# Computes naive bayes classification on a given binary X matrix of predictors and a 
+# training vector of labels.
+#
+# args:
+#   X - an n x p data table or matrix X whose columns are binary variables and rows are observations
+#   y - an n length response vector y, whose entries are factors representing labels for each observation
+#
+# returns:
+#   list with following objects :
+#     prp - a vetor of prior probabilities for each label in y
+#     ccp - class conditional probabilities P(x=1 | Y=j) for k = 1,...,p and all labels j
+#     post - list of P(Y=j | X=x) calculated from algorithm for each observation
+#     pred - n dimensional vector specifying the classifcation for each observation
+#     mis - misclassification error rate of classifier
+naive_bayes <- function(X, y){
+  if(!is.factor(y))
+    y <- as.factor(y)
+  output <- list() # list to be outputted in the end
+  pp <- prop.table(table(y)) # prior probabilities
+
+  ccp_list <- list() # Class conditional probabilities list
+  
+  
+  if(dim(X)[2] == 1){
+    ccp_list <- prop.table(table(y, X[,1]), margin=1)
+  }else{
+    for(i in 1:dim(X)[2]){
+      ccp_list[[i]] <- prop.table(table(y, X[,i]), margin=1)
+    }
+  }
+  ccp_list <- setNames(ccp_list, names(X))
+
+  posteriors <- list()
+  for(i in 1:nrow(X)){
+    posteriors[[i]] <- compute_classifier(ccp_list, pp, unlist(X[i,]))
+  }
+  # Grabbing classification of row which is index - 1 (0 or 1) of the larger probability
+  preds <- factor(lapply(posteriors, FUN=function(obs){return(which.max(obs) - 1)}) %>% as.vector(), levels =levels(y))
+  
+  # Calculating misclassification error rate
+  mis <- sum(y != preds)/length(y)
+  
+  return(list(prp = pp,
+              ccp = ccp_list,
+              post = posteriors,
+              pred = preds,
+              mis = mis))
+}
+```
+
+
+***
+# Testing Naive Bayes Classifier
+In order to gain insight on the content of emails, we extracted the frequency of words that appear in ham and spam emails and stored the top 500 words. We then computed the average number of times each word appears in a given email along with the probability of occurrence. To create features, we created a matrix of binary features that indicate whether a specified word appears in the email. We then used the following words to create our covariates:
+
+* Top 50 words that appear exclusively in spam emails
+* Top 50 words that appear exclusively in ham emails
+* All words that appear 10% more often in one email type over the other. For instance, the word *Unsubscribe* appeared in a spam email with a probability of 0.23, and the same word appeared in a ham email with a probability of 0.79. Since the difference was above the set threshold of 0.10, we deemed it to be significant and used it as a binary indicator.
+
+
+### Preprocessing
+The following code preprocesses the data for word counts.
+```{r preprocess, eval=FALSE}
+legit <- which(labels[,1] == 1)
+spam <- which(labels[,1] == 0)
+
+test.email <- training.emails[[1]]
+
+spam_indices <- which(labels[1] == 0)
+
+# gets frequency of every word from all emails
+freq<<- data.frame(word = character(), count = numeric())
+addFreq <- function(index){
+  # split an email by word
+  email_split <- str_split(training.emails[[index]], boundary("word"))
+  # get unique words
+  uniqueWords <- unique(unlist(email_split)) 
+  
+  for (i in 1:length(uniqueWords)){
+    # calculate frequency in this email
+    curr <- sum(str_count(training.emails[[index]], uniqueWords[i]))
+    # if data frame is empty
+    if (nrow(freq) == 0){
+      freq <<- rbind(freq, data.frame(word = uniqueWords[i], count = curr))
+    }
+    else if (length(uniqueWords[i]) > 0 && !is.na(uniqueWords[i])){
+      # not in data frame yet
+      if (!any(freq$word == uniqueWords[i])){
+        freq <<- rbind(freq, data.frame(word = uniqueWords[i], count = curr))
+      }
+      else{
+        # in data frame, add to current value
+        currInd <- which(freq[,1]==uniqueWords[i])
+        freq$count[currInd] = freq$count[currInd] + curr
+      }
+    }
+  }
+}
+
+# get frequency of each word in spam emails
+for (i in 1:length(spam_indices)){
+  addFreq(spam_indices[i])
+}
+
+# Order rows in decending order by count
+orderedFreq <- freq[order(-freq$count),]
+
+# Get mean number times a word appears in email 
+proportion <- list()
+for (i in 1:nrow(orderedFreq)) {
+  x <- (orderedFreq[i,2])/length(spam)
+  proportion <- c(proportion, x)
+}
+col <- data.frame(t(proportion))
+col <- t(col)
+orderedFreq <- cbind(orderedFreq, col)
+
+# mean w.r.t spam
+spam.Freq <- orderedFreq 
+
+# get frequency of each word in non-spam emails
+freq<<- data.frame(word = character(), count = numeric())
+for (i in 1:length(legit)){
+  addFreq(legit[i])
+}
+orderedFreq <- freq[order(-freq$count),] 
+proportion <- list()
+for (i in 1:nrow(orderedFreq)) {
+  x <- (orderedFreq[i,2])/length(legit)
+  proportion <- c(proportion, x)
+}
+col <- data.frame(t(proportion))
+col <- t(col)
+orderedFreq <- cbind(orderedFreq, col)
+
+# mean frequency w.r.t non spam
+legit.Freq <- orderedFreq 
+
+# get remove all strings of length == 1
+spamDF <- data.frame()
+for (i in 1:nrow(spam.Freq)) {
+  if (nchar(as.character(spam.Freq[i,1])) == 1) {
+  }
+  else {
+    spamDF <- rbind(spamDF, spam.Freq[i,])
+  }
+}
+legitDF <- data.frame()
+for (i in 1:nrow(legit.Freq)) {
+  if (nchar(as.character(legit.Freq[i,1])) == 1) {
+  }
+  else {
+    legitDF <- rbind(legitDF, legit.Freq[i,])
+  }
+}
+
+# get number of spam emails a word appears in
+# if word appears in an email just once, count increments
+numEmailsApp <- list()
+for (i in 1:500) { # run on top 500 words
+  test.word <- spamDF[i,1]
+  count <- 0
+  for (j in 1:nrow(spamDF)) {
+    email_split <- str_split(training.emails[[spam[j]]], boundary("word"))
+    uniqueWords <- as.vector(unique(unlist(email_split)))
+    if (as.character(test.word) %in% uniqueWords) {
+      count <- count + 1
+    }
+  }
+  numEmailsApp[i] <- count
+}
+appDF <- as.data.frame(numEmailsApp)
+appDF <- t(appDF)
+vect <- c()
+for (i in 1:nrow(appDF)) {
+  num <- appDF[i,]/nrow(legitDF)
+  vect <- c(vect, num)
+}
+vect <- as.data.frame(vect)
+
+# modify col names
+colnames(legitDF2) <- c("word", "count", "mean count", "num emails word appears in", "probability of appearance")
+# make master dataframe of all spam words and probabilities
+legitMaster <- legitDF2[order(-spamDF2$`probability of appearance`),] 
+
+# get number of real emails a word appears in
+# if word appears in an email just once, count increments
+numEmailsApp <- list()
+for (i in 1:500) { # run on top 500 words only
+  test.word <- legitDF[i,1]
+  count <- 0
+  for (j in 1:nrow(legitDF)) {
+    email_split <- str_split(training.emails[[legit[j]]], boundary("word"))
+    uniqueWords <- as.vector(unique(unlist(email_split)))
+    if (as.character(test.word) %in% uniqueWords) {
+      count <- count + 1
+    }
+  }
+  numEmailsApp[i] <- count
+}
+appDF <- as.data.frame(numEmailsApp)
+appDF <- t(appDF)
+vect <- c()
+for (i in 1:nrow(spamMaster)) {
+  num <- spamMaster[i,4]/length(spam)
+  vect <- c(vect, num)
+}
+vect <- as.data.frame(vect)
+spamMaster <- spamMaster[,-5]
+spamMaster <- cbind(spamMaster, vect)
+
+# master list of words and probabilities w.r.t. spam emails
+colnames(spamMaster) <- c("word", "count", "mean count", "num emails word appears in", "probability of appearance")
+spamMaster <- spamMaster[order(-spamMaster$`probability of appearance`),] 
+
+
+# get vectors for all unique words and non-unqie words to both sets
+spamTop <- as.vector(spamMaster[,1])
+legitTop <- as.vector(legitMaster[,1])
+spamnotlegit <- c() # words in spam but not legit
+spamandlegit <- c() # words in both spam and legit lists
+legitnotspam <- c() # words in legit but not spam
+
+# populate vectors
+for (i in 1:length(spamTop)) {
+  word <- spamTop[i]
+  if (as.character(word) %in% legitTop) {
+    spamandlegit <- c(spamandlegit, word)
+  }
+  else {
+    spamnotlegit <- c(spamnotlegit, word)
+  }
+}
+for (i in 1:length(legitTop)) {
+  word <- legitTop[i]
+  if (as.character(word) %in% spamTop) {
+    
+  }
+  else {
+    legitnotspam <- c(legitnotspam, word)
+  }
+}
+
+# get list of words based on the disparity in the probabilty that a word is present in a spam email as compared to a non-spam email
+wordVect <- c()
+for (i in 1:length(spamandlegit)) {
+  word <- spamandlegit[i]
+  spam.index <- which(spamMaster$word == spamandlegit[i])
+  legit.index <- which(legitMaster$word == spamandlegit[i])
+  diff <- (spamMaster$`probability of appearance`[spam.index]) - (legitMaster$`probability of appearance`[legit.index])
+  if (abs(diff) > 0.6) { # probability difference of 0.6
+    wordVect <- c(wordVect, word)
+  }
+}
+```
+
+
+## Feature Engineering
+The above code takes *forever* to run so we simply ran it once and loaded the necessary workspace for future testing. The following code creates the binary feature matrix.
+```{r featureEng}
+load("/Users/lancefernando/Desktop/USFSpring2018/Statistical_Learning/MyWork/CaseStudy1/masterData.RData") # Loading Rdata wksp
+
+# Showing example of top spam word dataframe
+head(spamMaster)
+
+# Grabbing top keywords
+spamTop <- as.vector(spamMaster[,1])
+legitTop <- as.vector(legitMaster[,1])
+spamnotlegit <- c() # Vector of exclusive spam words
+spamandlegit <- c() # Vector of top spam and ham
+legitnotspam <- c() # Vector of exclusive ham words
+
+# ~~~~ Adding words to respective vectors ~~~~
+for (i in 1:length(spamTop)) {
+  word <- spamTop[i]
+  if (as.character(word) %in% legitTop) {
+    spamandlegit <- c(spamandlegit, word)
+  }
+  else {
+    spamnotlegit <- c(spamnotlegit, word)
+  }
+}
+
+for (i in 1:length(legitTop)) {
+  word <- legitTop[i]
+  if (as.character(word) %in% spamTop) {
+    
+  }
+  else {
+    legitnotspam <- c(legitnotspam, word)
+  }
+}
+
+# Storing words that are in both spam and ham emails but occur 
+# in one or the other more than 10% of the time
+wordVect <- c()
+for (i in 1:length(spamandlegit)) {
+  word <- spamandlegit[i]
+  spam.index <- which(spamMaster$word == spamandlegit[i])
+  legit.index <- which(legitMaster$word == spamandlegit[i])
+  diff <- (spamMaster$`probability of appearance`[spam.index]) - (legitMaster$`probability of appearance`[legit.index])
+  if (abs(diff) > 0.1) {
+    wordVect <- c(wordVect, word)
+  }
+}
+
+spam_words <- spamnotlegit[1:50] # Top 50 exclusive spam words
+ham_words <- legitnotspam[1:50] # Top 50 exclusive ham words
+both_words <- wordVect # All words appearing more than 10% of the time in either email type over the other
+
+
+# Helper function that appends to a global X matrix of features
+# where columns are dummy variables of whether or not specified words
+# appear in the email. 
+#
+# args:
+#   eml - string of a single email
+#   vec - vector of strings to check existence in email
+#   train_emls - list of all emails
+wordSearch <- function(eml, vec){
+  email <- c()
+  for(i in seq_along(vec)){
+    # If word appears in email at least once, encode col/row as 1
+    if (sum(str_count(eml, paste(vec[i]))) >= 1){
+      email <- c(email, 1) 
+    }
+    else{
+      email <- c(email, 0)
+    }
+  }
+  # Binding to global feature matrix X
+  X <<- rbind(X, email)
+  return(X)
+}
+
+vec <- c(spam_words, both_words, ham_words) # Using all features
+
+# Global feature matrix X
+X <<- data.frame(NULL)
+for(i in 1:length(training.emails)){
+  wordSearch(training.emails[[i]], vec)
+}
+colnames(X) <- vec
+
+resp <- labels$V1  %>% as.factor() # Grabbing training labels
+newX <- X[,-which(names(X) %in% c("Re", "00", "on", "20"))] # Removing feature that gives us problems =(
+
+```
+
+## Run classifier
+The following code runs our *naive bayes classifier* algorithm on our data.
+```{r run}
+# ~~~~~~ Running classifier ~~~~~~~
+out <- naive_bayes(newX, resp)
+
+# Prior probabilities
+out$prp
+
+# First class conditional probabilities for first 5 features
+out$ccp[1:5]
+
+# Posterior probabilites for first five emails
+out$post[1:5]
+
+# Predictions for first five emails
+out$pred[1:5]
+
+# Outputting misclassification error rate
+out$mis
+```
+Using our naive bayes classifier, we were able to achieve a misclassification error rate of **0.0543** or a success rate of **94.57%** using **170 features**!
+
+## Cross-Validating Results
+Using [10-fold cross validation](https://en.wikipedia.org/wiki/Cross-validation_(statistics)) to properly assess our misclassification error rate.
+```{r cv, warning=FALSE}
+set.seed(1)
+kfold_idxs <- sample(x = 1:10, replace = TRUE, size = length(resp))
+
+miss_tr <- numeric(0)
+miss_te <- numeric(0)
+for(i in 1:10){
+  train <- which(kfold_idxs != i)
+  test <- -train
+  fit <- naive_bayes(newX[train,], resp[train])
+
+  #Calculating current fold training missclass rate
+  miss_tr <- c(miss_tr, fit$mis)
+  
+  #Calculating test misclass
+  posteriors <- list()
+  X_test <- newX[test,]
+  for(i in 1:nrow(X_test)){
+    posteriors[[i]] <- compute_classifier(fit$ccp, fit$prp, unlist(X_test[i,]))
+  }
+  
+  # Grabbing classification of row which is index - 1 (0 or 1) of the larger probability
+  preds <- factor(lapply(posteriors, FUN=function(obs){return(which.max(obs) - 1)}) %>% as.vector(), levels =levels(resp))
+  
+  # Storing test misclassification error rate
+  miss_te <- c(miss_te, sum(resp[test] != preds)/length(resp[test]))
+}
+
+```
+
+### CV Boxplot
+```{r cvplot, warning=FALSE}
+# Plotting our error
+ggplot() + 
+  geom_boxplot(mapping=aes(x = c(rep("Train",10),rep("Test",10)),
+                           y = c(miss_tr,miss_te),
+                           col = c(rep("Train",10),rep("Test",10))), show.legend = FALSE) +
+  labs(x="Partition of Data",
+       y="Measurement",
+       title="Train and Test Error Rate Using 10-Fold CV",
+       subtitle=paste("Avg Train Error: ",
+                      round(mean(miss_tr, na.rm = TRUE),3),
+                      " | Avg Test Error: ",
+                      round(mean(miss_te, na.rm = TRUE),3), sep="")) + 
+  annotate(geom = "text", x = "Train", y = median(miss_tr, na.rm = TRUE),
+           label=round(median(miss_tr, na.rm = TRUE), 3)) + 
+  annotate(geom = "text", x = "Test", y = median(miss_te, na.rm = TRUE),
+           label=round(median(miss_te, na.rm = TRUE), 3))
+```
+
+# Results
+According to the boxplot above, our average misclassification test error was **0.052** with a median of **0.054**. Though these metrics are lower than that of our training metrics, the training metrics have much tighter bounds. By cross-validating our results we achieve a better assessment of how well our classifier is doing. Overall, using a total of **170 Features** our classifier achieves a success rate of about **94.80%** being able to correctly categorize *spam* emails 95/100 times! 

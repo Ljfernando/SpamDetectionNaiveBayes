@@ -413,47 +413,7 @@ spamMaster &lt;- cbind(spamMaster, vect)
 
 # master list of words and probabilities w.r.t. spam emails
 colnames(spamMaster) &lt;- c(&quot;word&quot;, &quot;count&quot;, &quot;mean count&quot;, &quot;num emails word appears in&quot;, &quot;probability of appearance&quot;)
-spamMaster &lt;- spamMaster[order(-spamMaster$`probability of appearance`),] 
-
-
-# get vectors for all unique words and non-unqie words to both sets
-spamTop &lt;- as.vector(spamMaster[,1])
-legitTop &lt;- as.vector(legitMaster[,1])
-spamnotlegit &lt;- c() # words in spam but not legit
-spamandlegit &lt;- c() # words in both spam and legit lists
-legitnotspam &lt;- c() # words in legit but not spam
-
-# populate vectors
-for (i in 1:length(spamTop)) {
-  word &lt;- spamTop[i]
-  if (as.character(word) %in% legitTop) {
-    spamandlegit &lt;- c(spamandlegit, word)
-  }
-  else {
-    spamnotlegit &lt;- c(spamnotlegit, word)
-  }
-}
-for (i in 1:length(legitTop)) {
-  word &lt;- legitTop[i]
-  if (as.character(word) %in% spamTop) {
-    
-  }
-  else {
-    legitnotspam &lt;- c(legitnotspam, word)
-  }
-}
-
-# get list of words based on the disparity in the probabilty that a word is present in a spam email as compared to a non-spam email
-wordVect &lt;- c()
-for (i in 1:length(spamandlegit)) {
-  word &lt;- spamandlegit[i]
-  spam.index &lt;- which(spamMaster$word == spamandlegit[i])
-  legit.index &lt;- which(legitMaster$word == spamandlegit[i])
-  diff &lt;- (spamMaster$`probability of appearance`[spam.index]) - (legitMaster$`probability of appearance`[legit.index])
-  if (abs(diff) &gt; 0.6) { # probability difference of 0.6
-    wordVect &lt;- c(wordVect, word)
-  }
-}</code></pre>
+spamMaster &lt;- spamMaster[order(-spamMaster$`probability of appearance`),] </code></pre>
 </div>
 <div id="feature-engineering" class="section level2">
 <h2><span class="header-section-number">3.1</span> Feature Engineering</h2>

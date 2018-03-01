@@ -287,46 +287,6 @@ spamMaster <- cbind(spamMaster, vect)
 # master list of words and probabilities w.r.t. spam emails
 colnames(spamMaster) <- c("word", "count", "mean count", "num emails word appears in", "probability of appearance")
 spamMaster <- spamMaster[order(-spamMaster$`probability of appearance`),] 
-
-
-# get vectors for all unique words and non-unqie words to both sets
-spamTop <- as.vector(spamMaster[,1])
-legitTop <- as.vector(legitMaster[,1])
-spamnotlegit <- c() # words in spam but not legit
-spamandlegit <- c() # words in both spam and legit lists
-legitnotspam <- c() # words in legit but not spam
-
-# populate vectors
-for (i in 1:length(spamTop)) {
-  word <- spamTop[i]
-  if (as.character(word) %in% legitTop) {
-    spamandlegit <- c(spamandlegit, word)
-  }
-  else {
-    spamnotlegit <- c(spamnotlegit, word)
-  }
-}
-for (i in 1:length(legitTop)) {
-  word <- legitTop[i]
-  if (as.character(word) %in% spamTop) {
-    
-  }
-  else {
-    legitnotspam <- c(legitnotspam, word)
-  }
-}
-
-# get list of words based on the disparity in the probabilty that a word is present in a spam email as compared to a non-spam email
-wordVect <- c()
-for (i in 1:length(spamandlegit)) {
-  word <- spamandlegit[i]
-  spam.index <- which(spamMaster$word == spamandlegit[i])
-  legit.index <- which(legitMaster$word == spamandlegit[i])
-  diff <- (spamMaster$`probability of appearance`[spam.index]) - (legitMaster$`probability of appearance`[legit.index])
-  if (abs(diff) > 0.6) { # probability difference of 0.6
-    wordVect <- c(wordVect, word)
-  }
-}
 ```
 
 

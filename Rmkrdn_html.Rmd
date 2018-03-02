@@ -15,7 +15,8 @@ library(stringr)
 library(magrittr)
 library(ggplot2)
 
-training.directory <- "~/Desktop/USFSpring2018/Statistical_Learning/Intro-to-Machine-Learning/Data/SPAMData/TRAINING/"
+# Set training directory to training folder
+training.directory <- "~/Desktop/USFSpring2018/Statistical_Learning/MyWork/CaseStudy1/SpamDetectionNaiveBayes/SPAMData/TRAINING/"
 
 # Loading training and test files from the SPAM data set
 training.names <- list.files(training.directory)
@@ -29,7 +30,7 @@ for(i in 1:length(training.names)){
 }
 
 #Training labels
-labels <- read.table("~/Desktop/USFSpring2018/Statistical_Learning/Intro-to-Machine-Learning/Data/SPAMData/SPAMTrain.label")
+labels <- read.table("~/Desktop/USFSpring2018/Statistical_Learning/MyWork/CaseStudy1/SpamDetectionNaiveBayes/SPAMData/SPAMTrain.label")
 ```
 
 # Programming algorithm
@@ -293,7 +294,7 @@ spamMaster <- spamMaster[order(-spamMaster$`probability of appearance`),]
 ## Feature Engineering
 The above code takes *forever* to run so we simply ran it once and loaded the necessary workspace for future testing. The following code creates the binary feature matrix.
 ```{r featureEng}
-load("/Users/lancefernando/Desktop/USFSpring2018/Statistical_Learning/MyWork/CaseStudy1/masterData.RData") # Loading Rdata wksp
+load("~/Desktop/USFSpring2018/Statistical_Learning/MyWork/CaseStudy1/SpamDetectionNaiveBayes/masterData.RData") # Loading Rdata wksp
 
 # Showing example of top spam word dataframe
 head(spamMaster)
